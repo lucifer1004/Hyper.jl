@@ -12,7 +12,7 @@ export Body,
     HyperTask,
     Waker,
     handshake!,
-    exec!,
+    exec,
     poll,
     poll!,
     free!,
@@ -27,7 +27,7 @@ mutable struct Body
     consumed::Bool
 
     function Body(
-        body_internal::Ptr{BodyInternal} = ccall(
+        body_internal::Ptr{BodyInternal}=ccall(
             (:hyper_body_new, libhyper),
             Ptr{BodyInternal},
             (),
@@ -120,7 +120,7 @@ mutable struct HyperTask
     task_internal::Ptr{TaskInternal}
     userdata::Any
 
-    function HyperTask(task_internal::Ptr{TaskInternal}, userdata = nothing)
+    function HyperTask(task_internal::Ptr{TaskInternal}, userdata=nothing)
         task = new(task_internal, userdata)
         # finalizer(free!, task)
     end
@@ -168,7 +168,7 @@ function bodyfunc(func)
     return func_c
 end
 
-function foreach!(body::Body, func, userdata = nothing)
+function foreach!(body::Body, func, userdata=nothing)
     if !body.consumed
         body.consumed = true
         task_ptr = ccall(
@@ -295,27 +295,7 @@ function free!(clientconn_options::ClientconnOptions)
     )
 end
 
-function headers_raw!(clientconn_options::ClientconnOptions, enabled::Bool)
-    ccall(
-        (:hyper_clientconn_options_headers_raw, libhyper),
-        Cvoid,
-        (Ptr{ClientconnOptionsInternal}, Int32),
-        clientconn_options.clientconn_options_internal,
-        Int32(enabled),
-    )
-end
-
-function http2!(clientconn_options::ClientconnOptions, enabled::Bool)
-    ccall(
-        (:hyper_clientconn_options_http2, libhyper),
-        Cvoid,
-        (Ptr{ClientconnOptionsInternal}, Int32),
-        clientconn_options.clientconn_options_internal,
-        Int32(enabled),
-    )
-end
-
-function exec!(clientconn_options::ClientconnOptions, executor::Executor)
+function exec(clientconn_options::ClientconnOptions, executor::Executor)
     ccall(
         (:hyper_clientconn_options_exec, libhyper),
         Cvoid,
@@ -323,6 +303,26 @@ function exec!(clientconn_options::ClientconnOptions, executor::Executor)
         clientconn_options.clientconn_options_internal,
         executor.executor_internal,
     )
+end
+
+function Base.setproperty!(clientconn_options::ClientconnOptions, key::Symbol, value)
+    if key == :use_raw_headers
+        ccall(
+            (:hyper_clientconn_options_headers_raw, libhyper),
+            Cvoid,
+            (Ptr{ClientconnOptionsInternal}, Int32),
+            clientconn_options.clientconn_options_internal,
+            Int32(value),
+        )
+    elseif key == :use_http2
+        ccall(
+            (:hyper_clientconn_options_http2, libhyper),
+            Cvoid,
+            (Ptr{ClientconnOptionsInternal}, Int32),
+            clientconn_options.clientconn_options_internal,
+            Int32(value),
+        )
+    end
 end
 
 # Context

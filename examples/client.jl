@@ -57,7 +57,8 @@ function read_cb!(conn, ctx::Context, buf::AbstractVector{UInt8}, buf_len::UInt6
     if ret < 0
         errno = Sys.iswindows() ? ccall(:WSAGetLastError, Int32, ()) : Libc.errno()
 
-        if (Sys.iswindows() && errno == WSAEWOULDBLOCK) || (!Sys.iswindows() && errno == Libc.EAGAIN)
+        if (Sys.iswindows() && errno == WSAEWOULDBLOCK) ||
+           (!Sys.iswindows() && errno == Libc.EAGAIN)
             if !isnothing(conn.read_waker)
                 Hyper.free!(conn.read_waker)
             end
@@ -96,7 +97,8 @@ function write_cb!(conn, ctx::Context, buf::AbstractVector{UInt8}, buf_len::Inte
     if ret < 0
         errno = Sys.iswindows() ? ccall(:WSAGetLastError, Int32, ()) : Libc.errno()
 
-        if (Sys.iswindows() && errno == WSAEWOULDBLOCK) || (!Sys.iswindows() && errno == Libc.EAGAIN)
+        if (Sys.iswindows() && errno == WSAEWOULDBLOCK) ||
+           (!Sys.iswindows() && errno == Libc.EAGAIN)
             if !isnothing(conn.write_waker)
                 Hyper.free!(conn.write_waker)
             end
@@ -149,7 +151,7 @@ function main()
 
     executor = Executor()
     opts = ClientconnOptions()
-    exec!(opts, executor)
+    exec(opts, executor)
 
     hs = handshake!(io, opts)
     hs.userdata = EXAMPLE_HANDSHAKE
@@ -239,7 +241,7 @@ function main()
             end
         end
 
-        result = poll_fd(handle(conn.fd); readable = true, writable = true)
+        result = poll_fd(handle(conn.fd); readable=true, writable=true)
 
         if result.readable && !isnothing(conn.read_waker)
             wake!(conn.read_waker)
