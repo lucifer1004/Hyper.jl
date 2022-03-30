@@ -29,7 +29,7 @@ function getrawfd(socket)
     end
 
     m = match(RawFDRegex, repr(socket))
-    rawfd = parse(Int32, m.captures[1])
+    rawfd = parse(FDInt, m.captures[1])
     return rawfd
 end
 
