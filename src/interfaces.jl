@@ -13,6 +13,7 @@ export Body,
     Waker,
     handshake!,
     exec!,
+    poll,
     poll!,
     free!,
     send!,
@@ -74,28 +75,22 @@ mutable struct Context
     context_internal::Ptr{ContextInternal}
 end
 
-struct HyperError end
+mutable struct HyperError
+    error_internal::Ptr{ErrorInternal}
+end
 
 mutable struct Executor
     executor_internal::Ptr{ExecutorInternal}
+    tasks::Dict{Ptr{TaskInternal},Any}
 
     function Executor()
-        executor = new(ccall((:hyper_executor_new, libhyper), Ptr{ExecutorInternal}, ()))
+        executor = new(ccall((:hyper_executor_new, libhyper), Ptr{ExecutorInternal}, ()), Dict())
         # finalizer(free!, executor)
     end
 end
 
 struct Headers
     headers_internal::Ptr{HeadersInternal}
-end
-
-mutable struct HyperTask
-    task_internal::Ptr{TaskInternal}
-
-    function HyperTask(task_internal::Ptr{TaskInternal})
-        task = new(task_internal)
-        # finalizer(free!, task)
-    end
 end
 
 mutable struct HyperIO
@@ -118,6 +113,16 @@ end
 
 mutable struct Response
     response_internal::Ptr{ResponseInternal}
+end
+
+mutable struct HyperTask
+    task_internal::Ptr{TaskInternal}
+    userdata::Any
+
+    function HyperTask(task_internal::Ptr{TaskInternal}, userdata=nothing)
+        task = new(task_internal, userdata)
+        # finalizer(free!, task)
+    end
 end
 
 mutable struct Waker
@@ -323,6 +328,31 @@ end
 
 # Error
 
+function free!(err::HyperError)
+    ccall(
+        (:hyper_error_free, libhyper),
+        Cvoid,
+        (Ptr{ErrorInternal},),
+        err.error_internal,
+    )
+end
+
+function Base.getproperty(err::HyperError, key::Symbol)
+    if key == :code
+        return Code(ccall((:hyper_error_code, libhyper), Int32, (Ptr{ErrorInternal},), err.error_internal))
+    elseif key == :msg
+        buf = zeros(UInt8, 8192)
+        msg_len = ccall((:hyper_error_print, libhyper), UInt64, (Ptr{ErrorInternal}, Ptr{UInt8}, UInt64), err.error_internal, buf, UInt64(length(buf)))
+        return String(buf[1:msg_len])
+    else
+        return getfield(err, key)
+    end
+end
+
+function Base.show(io::IO, err::HyperError)
+    print(io, err.code, ": ", err.msg)
+end
+
 # Executor
 
 function free!(executor::Executor)
@@ -342,10 +372,17 @@ function poll!(executor::Executor)
         executor.executor_internal,
     )
 
-    return task_ptr == C_NULL ? nothing : HyperTask(task_ptr)
+    if task_ptr == C_NULL || task_ptr ∉ keys(executor.tasks)
+        return nothing
+    else
+        userdata = pop!(executor.tasks, task_ptr)
+        return HyperTask(task_ptr, userdata)
+    end
 end
 
 function Base.push!(executor::Executor, task::HyperTask)
+    push!(executor.tasks, task.task_internal => task.userdata)
+
     return Code(
         ccall(
             (:hyper_executor_push, libhyper),
@@ -712,34 +749,14 @@ function Base.getproperty(task::HyperTask, key::Symbol)
         if typ == TASK_BUF
             return Buf(Ptr{BufInternal}(ptr))
         elseif typ == TASK_ERROR
-            return HyperError(Ptr{HyperErrorInternal}(ptr))
+            return HyperError(Ptr{ErrorInternal}(ptr))
         elseif typ == TASK_RESPONSE
             return Response(Ptr{ResponseInternal}(ptr))
         else
             return Clientconn(Ptr{ClientconnInternal}(ptr))
         end
-    elseif key == :userdata
-        ptr = ccall(
-            (:hyper_task_userdata, libhyper),
-            Ptr{Cvoid},
-            (Ptr{TaskInternal},),
-            task.task_internal,
-        )
-        return unsafe_pointer_to_objref(ptr)
     else
         return getfield(task, key)
-    end
-end
-
-function Base.setproperty!(task::HyperTask, key::Symbol, value)
-    if key == :userdata
-        ccall(
-            (:hyper_task_set_userdata, libhyper),
-            Cvoid,
-            (Ptr{TaskInternal}, Any),
-            task.task_internal,
-            value,
-        )
     end
 end
 
