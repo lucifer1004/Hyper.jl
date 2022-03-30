@@ -5,8 +5,7 @@ using FileWatching
 
 const FDInt = Sys.iswindows() ? UInt : Int32
 const RawFDRegex = Sys.iswindows() ? r"WindowsRawSocket\((\w+)\)" : r"RawFD\((\d+)\)"
-const read_sym = Sys.iswindows() ? :_read : :read
-const write_sym = Sys.iswindows() ? :_write : :write
+const WSAEWOULDBLOCK = Int32(10035)
 
 function handle(fd::FDInt)
     if Sys.iswindows()
@@ -34,17 +33,31 @@ function getrawfd(socket)
 end
 
 function read_cb!(conn, ctx::Context, buf::AbstractVector{UInt8}, buf_len::UInt64)
-    ret = ccall(
-        read_sym,
-        FDInt,
-        (Int32, Ptr{UInt8}, UInt64),
-        conn.fd,
-        pointer(buf),
-        UInt64(buf_len),
-    )
+    if Sys.iswindows()
+        ret = ccall(
+            :recv,
+            Int32,
+            (UInt, Ptr{UInt8}, Int32, Int32),
+            conn.fd,
+            pointer(buf),
+            Int32(buf_len),
+            0,
+        )
+    else
+        ret = ccall(
+            :read,
+            Int32,
+            (Int32, Ptr{UInt8}, UInt64),
+            conn.fd,
+            pointer(buf),
+            UInt64(buf_len),
+        )
+    end
 
     if ret < 0
-        if Libc.errno() == Libc.EAGAIN
+        errno = Sys.iswindows() ? ccall(:WSAGetLastError, Int32, ()) : Libc.errno()
+
+        if (Sys.iswindows() && errno == WSAEWOULDBLOCK) || (!Sys.iswindows() && errno == Libc.EAGAIN)
             if !isnothing(conn.read_waker)
                 Hyper.free!(conn.read_waker)
             end
@@ -59,17 +72,31 @@ function read_cb!(conn, ctx::Context, buf::AbstractVector{UInt8}, buf_len::UInt6
 end
 
 function write_cb!(conn, ctx::Context, buf::AbstractVector{UInt8}, buf_len::Integer)
-    ret = ccall(
-        write_sym,
-        FDInt,
-        (Int32, Ptr{UInt8}, UInt64),
-        conn.fd,
-        pointer(buf),
-        UInt64(buf_len),
-    )
+    if Sys.iswindows()
+        ret = ccall(
+            :send,
+            Int32,
+            (UInt, Ptr{UInt8}, Int32, Int32),
+            conn.fd,
+            pointer(buf),
+            Int32(buf_len),
+            0,
+        )
+    else
+        ret = ccall(
+            :write,
+            Int32,
+            (Int32, Ptr{UInt8}, UInt64),
+            conn.fd,
+            pointer(buf),
+            UInt64(buf_len),
+        )
+    end
 
     if ret < 0
-        if Libc.errno() == Libc.EAGAIN
+        errno = Sys.iswindows() ? ccall(:WSAGetLastError, Int32, ()) : Libc.errno()
+
+        if (Sys.iswindows() && errno == WSAEWOULDBLOCK) || (!Sys.iswindows() && errno == Libc.EAGAIN)
             if !isnothing(conn.write_waker)
                 Hyper.free!(conn.write_waker)
             end
