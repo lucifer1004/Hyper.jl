@@ -4,7 +4,17 @@ using StringViews
 using FileWatching
 
 const FDInt = Sys.iswindows() ? UInt : Int32
-const RawFDRegex = Sys.iswindows() ? r"WindowsRawSocket\((\d+)\)" : r"RawFD\((\d+)\)"
+const RawFDRegex = Sys.iswindows() ? r"WindowsRawSocket\((\w+)\)" : r"RawFD\((\d+)\)"
+const read_sym = Sys.iswindows() ? :_read : :read
+const write_sym = Sys.iswindows() ? :_write : :write
+
+function handle(fd::FDInt)
+    if Sys.iswindows()
+        return Base.WindowsRawSocket(Base.bitcast(Ptr{Cvoid}, fd))
+    else
+        return RawFD(fd)
+    end
+end
 
 mutable struct ConnData
     fd::FDInt
@@ -24,7 +34,7 @@ function getrawfd(socket)
 end
 
 function read_cb!(conn, ctx::Context, buf::AbstractVector{UInt8}, buf_len::UInt64)
-    ret = ccall(:read, FDInt, (Int32, Ptr{UInt8}, UInt64), conn.fd, pointer(buf), UInt64(buf_len))
+    ret = ccall(read_sym, FDInt, (Int32, Ptr{UInt8}, UInt64), conn.fd, pointer(buf), UInt64(buf_len))
 
     if ret < 0
         if Libc.errno() == Libc.EAGAIN
@@ -42,7 +52,7 @@ function read_cb!(conn, ctx::Context, buf::AbstractVector{UInt8}, buf_len::UInt6
 end
 
 function write_cb!(conn, ctx::Context, buf::AbstractVector{UInt8}, buf_len::Integer)
-    ret = ccall(:write, Int32, (Int32, Ptr{UInt8}, UInt64), conn.fd, pointer(buf), UInt64(buf_len))
+    ret = ccall(write_sym, FDInt, (Int32, Ptr{UInt8}, UInt64), conn.fd, pointer(buf), UInt64(buf_len))
 
     if ret < 0
         if Libc.errno() == Libc.EAGAIN
@@ -188,7 +198,7 @@ function main()
             end
         end
 
-        result = poll_fd(Sockets.OS_HANDLE(conn.fd); readable=true, writable=true)
+        result = poll_fd(handle(conn.fd); readable = true, writable = true)
 
         if result.readable && !isnothing(conn.read_waker)
             wake!(conn.read_waker)
