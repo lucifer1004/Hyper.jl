@@ -34,7 +34,14 @@ function getrawfd(socket)
 end
 
 function read_cb!(conn, ctx::Context, buf::AbstractVector{UInt8}, buf_len::UInt64)
-    ret = ccall(read_sym, FDInt, (Int32, Ptr{UInt8}, UInt64), conn.fd, pointer(buf), UInt64(buf_len))
+    ret = ccall(
+        read_sym,
+        FDInt,
+        (Int32, Ptr{UInt8}, UInt64),
+        conn.fd,
+        pointer(buf),
+        UInt64(buf_len),
+    )
 
     if ret < 0
         if Libc.errno() == Libc.EAGAIN
@@ -52,7 +59,14 @@ function read_cb!(conn, ctx::Context, buf::AbstractVector{UInt8}, buf_len::UInt6
 end
 
 function write_cb!(conn, ctx::Context, buf::AbstractVector{UInt8}, buf_len::Integer)
-    ret = ccall(write_sym, FDInt, (Int32, Ptr{UInt8}, UInt64), conn.fd, pointer(buf), UInt64(buf_len))
+    ret = ccall(
+        write_sym,
+        FDInt,
+        (Int32, Ptr{UInt8}, UInt64),
+        conn.fd,
+        pointer(buf),
+        UInt64(buf_len),
+    )
 
     if ret < 0
         if Libc.errno() == Libc.EAGAIN

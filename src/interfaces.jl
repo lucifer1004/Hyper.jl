@@ -27,7 +27,7 @@ mutable struct Body
     consumed::Bool
 
     function Body(
-        body_internal::Ptr{BodyInternal}=ccall(
+        body_internal::Ptr{BodyInternal} = ccall(
             (:hyper_body_new, libhyper),
             Ptr{BodyInternal},
             (),
@@ -84,7 +84,8 @@ mutable struct Executor
     tasks::Dict{Ptr{TaskInternal},Any}
 
     function Executor()
-        executor = new(ccall((:hyper_executor_new, libhyper), Ptr{ExecutorInternal}, ()), Dict())
+        executor =
+            new(ccall((:hyper_executor_new, libhyper), Ptr{ExecutorInternal}, ()), Dict())
         # finalizer(free!, executor)
     end
 end
@@ -119,7 +120,7 @@ mutable struct HyperTask
     task_internal::Ptr{TaskInternal}
     userdata::Any
 
-    function HyperTask(task_internal::Ptr{TaskInternal}, userdata=nothing)
+    function HyperTask(task_internal::Ptr{TaskInternal}, userdata = nothing)
         task = new(task_internal, userdata)
         # finalizer(free!, task)
     end
@@ -167,7 +168,7 @@ function bodyfunc(func)
     return func_c
 end
 
-function foreach!(body::Body, func, userdata=nothing)
+function foreach!(body::Body, func, userdata = nothing)
     if !body.consumed
         body.consumed = true
         task_ptr = ccall(
@@ -329,20 +330,29 @@ end
 # Error
 
 function free!(err::HyperError)
-    ccall(
-        (:hyper_error_free, libhyper),
-        Cvoid,
-        (Ptr{ErrorInternal},),
-        err.error_internal,
-    )
+    ccall((:hyper_error_free, libhyper), Cvoid, (Ptr{ErrorInternal},), err.error_internal)
 end
 
 function Base.getproperty(err::HyperError, key::Symbol)
     if key == :code
-        return Code(ccall((:hyper_error_code, libhyper), Int32, (Ptr{ErrorInternal},), err.error_internal))
+        return Code(
+            ccall(
+                (:hyper_error_code, libhyper),
+                Int32,
+                (Ptr{ErrorInternal},),
+                err.error_internal,
+            ),
+        )
     elseif key == :msg
         buf = zeros(UInt8, 8192)
-        msg_len = ccall((:hyper_error_print, libhyper), UInt64, (Ptr{ErrorInternal}, Ptr{UInt8}, UInt64), err.error_internal, buf, UInt64(length(buf)))
+        msg_len = ccall(
+            (:hyper_error_print, libhyper),
+            UInt64,
+            (Ptr{ErrorInternal}, Ptr{UInt8}, UInt64),
+            err.error_internal,
+            buf,
+            UInt64(length(buf)),
+        )
         return String(buf[1:msg_len])
     else
         return getfield(err, key)
@@ -372,6 +382,8 @@ function poll!(executor::Executor)
         executor.executor_internal,
     )
 
+    # It happens that the task polled from the executor is not pushed by us.
+    # In this case, we just omit this task.
     if task_ptr == C_NULL || task_ptr ∉ keys(executor.tasks)
         return nothing
     else
