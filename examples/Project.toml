@@ -1,4 +1,3 @@
 [deps]
 Hyper = "52c95252-7b3d-4bfe-b16c-8590bf86de22"
 StringViews = "354b36f9-a18e-4713-926e-db85100087ba"
-hyper_jll = "a61b6c3d-25e5-5e83-9f29-3d6b98db101c"
