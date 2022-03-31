@@ -157,7 +157,18 @@ function poll(body::Body)
     end
 end
 
-function bodyfunc(func)
+function body_foreachfunc(func)
+    function func_inner(userdata::Any, buf_ptr::Ptr{BufInternal})
+        buf = Buf(buf_ptr)
+        return func(userdata, buf)
+    end
+
+    func_c = @cfunction($func_inner, Int32, (Any, Ptr{BufInternal}))
+
+    return func_c
+end
+
+function body_datafunc(func)
     function func_inner(userdata::Any, ctx_ptr::Ptr{ContextInternal}, buf_ptr::Ptr{Ptr{BufInternal}})
         ctx = Context(ctx_ptr)
         buf_ref = Ref{Union{Buf,Nothing}}(nothing)
@@ -180,7 +191,7 @@ function foreach!(body::Body, func, userdata=nothing)
             Ptr{TaskInternal},
             (Ptr{BodyInternal}, Ptr{Cvoid}, Any),
             body.body_internal,
-            bodyfunc(func),
+            body_foreachfunc(func),
             userdata,
         )
         return HyperTask(task_ptr)
@@ -195,7 +206,7 @@ function Base.setproperty!(body::Body, key::Symbol, value)
                 Cvoid,
                 (Ptr{BodyInternal}, Ptr{Cvoid}),
                 body.body_internal,
-                bodyfunc(value),
+                body_datafunc(value),
             )
         elseif key == :userdata
             ccall(
