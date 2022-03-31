@@ -18,7 +18,8 @@ export Body,
     free!,
     send!,
     wake!,
-    foreach!
+    foreach!,
+    on_informational!
 
 # Structs
 
@@ -81,11 +82,11 @@ end
 
 mutable struct Executor
     executor_internal::Ptr{ExecutorInternal}
-    tasks::Dict{Ptr{TaskInternal},Any}
+    tasks::Set{Ptr{TaskInternal}}
 
     function Executor()
         executor =
-            new(ccall((:hyper_executor_new, libhyper), Ptr{ExecutorInternal}, ()), Dict())
+            new(ccall((:hyper_executor_new, libhyper), Ptr{ExecutorInternal}, ()), Set())
         # finalizer(free!, executor)
     end
 end
@@ -118,10 +119,9 @@ end
 
 mutable struct HyperTask
     task_internal::Ptr{TaskInternal}
-    userdata::Any
 
-    function HyperTask(task_internal::Ptr{TaskInternal}, userdata=nothing)
-        task = new(task_internal, userdata)
+    function HyperTask(task_internal::Ptr{TaskInternal})
+        task = new(task_internal)
         # finalizer(free!, task)
     end
 end
@@ -158,12 +158,16 @@ function poll(body::Body)
 end
 
 function bodyfunc(func)
-    function func_inner(userdata::Ptr{Cvoid}, buf_ptr::Ptr{BufInternal})
-        buf = Buf(buf_ptr)
-        return func(unsafe_pointer_to_objref(userdata), buf)
+    function func_inner(userdata::Any, ctx_ptr::Ptr{ContextInternal}, buf_ptr::Ptr{Ptr{BufInternal}})
+        ctx = Context(ctx_ptr)
+        buf_ref = Ref{Union{Buf,Nothing}}(nothing)
+        res = func(userdata, ctx, buf_ref)
+        unsafe_store!(buf_ptr, isnothing(buf_ref[]) ? Ptr{BufInternal}() : buf_ref[].buf_internal)
+
+        return res
     end
 
-    func_c = @cfunction($func_inner, Int32, (Ptr{Cvoid}, Ptr{BufInternal}))
+    func_c = @cfunction($func_inner, Int32, (Any, Ptr{ContextInternal}, Ptr{Ptr{BufInternal}}))
 
     return func_c
 end
@@ -247,6 +251,10 @@ function bytes(buf::Buf)
         buf.buf_internal,
     )
     return unsafe_wrap(Array, bytes_ptr, len(buf))
+end
+
+function Base.show(io::IO, buf::Buf)
+    print(io, String(bytes(buf)))
 end
 
 # Clientconn
@@ -384,16 +392,16 @@ function poll!(executor::Executor)
 
     # It happens that the task polled from the executor is not pushed by us.
     # In this case, we just omit this task.
-    if task_ptr == C_NULL || task_ptr ∉ keys(executor.tasks)
+    if task_ptr == C_NULL || task_ptr ∉ executor.tasks
         return nothing
     else
-        userdata = pop!(executor.tasks, task_ptr)
-        return HyperTask(task_ptr, userdata)
+        pop!(executor.tasks, task_ptr)
+        return HyperTask(task_ptr)
     end
 end
 
 function Base.push!(executor::Executor, task::HyperTask)
-    push!(executor.tasks, task.task_internal => task.userdata)
+    push!(executor.tasks, task.task_internal)
 
     return Code(
         ccall(
@@ -442,7 +450,7 @@ end
 
 function headerfunc(func)
     function func_inner(
-        userdata::Ptr{Cvoid},
+        userdata::Any,
         key_ptr::Ptr{UInt8},
         key_len::UInt64,
         value_ptr::Ptr{UInt8},
@@ -450,14 +458,10 @@ function headerfunc(func)
     )
         key = unsafe_wrap(Array, key_ptr, key_len)
         value = unsafe_wrap(Array, value_ptr, value_len)
-        return func(unsafe_pointer_to_objref(userdata), key, value)
+        return func(userdata, key, value)
     end
 
-    func_c = @cfunction(
-        $func_inner,
-        Int32,
-        (Ptr{Cvoid}, Ptr{UInt8}, UInt64, Ptr{UInt8}, UInt64),
-    )
+    func_c = @cfunction($func_inner, Int32, (Any, Ptr{UInt8}, UInt64, Ptr{UInt8}, UInt64),)
 
     return func_c
 end
@@ -486,21 +490,18 @@ end
 
 function iofunc(func)
     function func_inner(
-        userdata::Ptr{Cvoid},
+        userdata::Any,
         ctx_ptr::Ptr{ContextInternal},
         buf_ptr::Ptr{UInt8},
         buf_len::UInt64,
     )
         ctx = Context(ctx_ptr)
         buf = unsafe_wrap(Array, buf_ptr, buf_len)
-        return UInt64(func(unsafe_pointer_to_objref(userdata), ctx, buf, buf_len))
+        return UInt64(func(userdata, ctx, buf, buf_len))
     end
 
-    func_c = @cfunction(
-        $func_inner,
-        UInt64,
-        (Ptr{Cvoid}, Ptr{ContextInternal}, Ptr{UInt8}, UInt64)
-    )
+    func_c =
+        @cfunction($func_inner, UInt64, (Any, Ptr{ContextInternal}, Ptr{UInt8}, UInt64))
 
     return func_c
 end
@@ -547,6 +548,28 @@ function free!(request::Request)
         Cvoid,
         (Ptr{RequestInternal},),
         request.request_internal,
+    )
+end
+
+function reqfunc(func)
+    function func_inner(userdata::Any, resp_ptr::Ptr{ResponseInternal})
+        resp = Response(resp_ptr)
+        func(userdata, resp)
+    end
+
+    func_c = @cfunction($func_inner, Cvoid, (Any, Ptr{ResponseInternal}))
+
+    return func_c
+end
+
+function on_informational!(request::Request, func, data=nothing)
+    return Code(
+        ccall((:hyper_request_on_informational, libhyper),
+            Int32,
+            (Ptr{RequestInternal}, Ptr{Cvoid}, Any),
+            request.request_internal,
+            reqfunc(func),
+            data)
     )
 end
 
@@ -703,13 +726,13 @@ function Base.getproperty(response::Response, key::Symbol)
         )
         return Headers(headers_ptr)
     elseif key == :raw_headers
-        buf_ptr = ccall(
+        headers_ptr = ccall(
             (:hyper_response_headers_raw, libhyper),
             Ptr{HeadersInternal},
             (Ptr{ResponseInternal},),
             response.response_internal,
         )
-        return Buf(buf_ptr)
+        return Headers(headers_ptr)
     elseif key == :reason
         bytes_len = ccall(
             (:hyper_response_reason_phrase_len, libhyper),
@@ -767,8 +790,29 @@ function Base.getproperty(task::HyperTask, key::Symbol)
         else
             return Clientconn(Ptr{ClientconnInternal}(ptr))
         end
+    elseif key == :userdata
+        return ccall(
+            (:hyper_task_userdata, libhyper),
+            Any,
+            (Ptr{TaskInternal},),
+            task.task_internal,
+        )
     else
         return getfield(task, key)
+    end
+end
+
+function Base.setproperty!(task::HyperTask, key::Symbol, value)
+    if key == :userdata
+        ccall(
+            (:hyper_task_set_userdata, libhyper),
+            Cvoid,
+            (Ptr{TaskInternal}, Any),
+            task.task_internal,
+            value,
+        )
+    else
+        return setfield!(task, key, value)
     end
 end
 
