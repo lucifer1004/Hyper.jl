@@ -1,7 +1,6 @@
 using Hyper
 using Sockets
 using StringViews
-using FileWatching
 
 include("utils.jl")
 
@@ -44,8 +43,7 @@ function main()
     println("connecting to port $port on $host...")
 
     socket = connect(host, port)
-    rawfd = getrawfd(socket)
-    conn = ConnData(rawfd, socket, nothing, nothing)
+    conn = ConnData(socket, nothing, nothing, nothing)
     io = HyperIO()
     io.userdata = conn
     io.read = read_cb!
@@ -170,14 +168,16 @@ function main()
             end
         end
 
-        result = poll_fd(handle(conn.fd); readable=true, writable=true)
+        if !isnothing(conn.task)
+            wait(conn.task)
+        end
 
-        if result.readable && !isnothing(conn.read_waker)
+        if !isnothing(conn.read_waker)
             wake!(conn.read_waker)
             conn.read_waker = nothing
         end
 
-        if result.writable && !isnothing(conn.write_waker)
+        if !isnothing(conn.write_waker)
             wake!(conn.write_waker)
             conn.write_waker = nothing
         end
