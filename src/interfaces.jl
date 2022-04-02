@@ -227,9 +227,9 @@ function Buf(bytes_arr::AbstractVector{UInt8})
         ccall(
             (:hyper_buf_copy, libhyper),
             Ptr{BufInternal},
-            (Ptr{UInt8}, UInt64),
+            (Ptr{UInt8}, UInt),
             bytes_arr,
-            UInt64(length(bytes_arr)),
+            UInt(length(bytes_arr)),
         ),
     )
 end
@@ -243,7 +243,7 @@ function free!(buf::Buf)
 end
 
 function len(buf::Buf)
-    return ccall((:hyper_buf_len, libhyper), UInt64, (Ptr{BufInternal},), buf.buf_internal)
+    return ccall((:hyper_buf_len, libhyper), UInt, (Ptr{BufInternal},), buf.buf_internal)
 end
 
 function Base.size(buf::Buf)
@@ -366,11 +366,11 @@ function Base.getproperty(err::HyperError, key::Symbol)
         buf = zeros(UInt8, 8192)
         msg_len = ccall(
             (:hyper_error_print, libhyper),
-            UInt64,
-            (Ptr{ErrorInternal}, Ptr{UInt8}, UInt64),
+            UInt,
+            (Ptr{ErrorInternal}, Ptr{UInt8}, UInt),
             err.error_internal,
             buf,
-            UInt64(length(buf)),
+            UInt(length(buf)),
         )
         return String(buf[1:msg_len])
     else
@@ -434,12 +434,12 @@ function Base.setproperty!(headers::Headers, key::Symbol, value)
     ccall(
         (:hyper_headers_set, libhyper),
         Cvoid,
-        (Ptr{HeadersInternal}, Ptr{UInt8}, UInt64, Ptr{UInt8}, UInt64),
+        (Ptr{HeadersInternal}, Ptr{UInt8}, UInt, Ptr{UInt8}, UInt),
         headers.headers_internal,
         key_bytes,
-        UInt64(length(key_bytes)),
+        UInt(length(key_bytes)),
         value_bytes,
-        UInt64(length(value_bytes)),
+        UInt(length(value_bytes)),
     )
 end
 
@@ -450,12 +450,12 @@ function Base.push!(headers::Headers, kv::Pair)
     ccall(
         (:hyper_headers_add, libhyper),
         Cvoid,
-        (Ptr{HeadersInternal}, Ptr{UInt8}, UInt64, Ptr{UInt8}, UInt64),
+        (Ptr{HeadersInternal}, Ptr{UInt8}, UInt, Ptr{UInt8}, UInt),
         headers.headers_internal,
         key_bytes,
-        UInt64(length(key_bytes)),
+        UInt(length(key_bytes)),
         value_bytes,
-        UInt64(length(value_bytes)),
+        UInt(length(value_bytes)),
     )
 end
 
@@ -463,16 +463,16 @@ function headerfunc(func)
     function func_inner(
         userdata::Any,
         key_ptr::Ptr{UInt8},
-        key_len::UInt64,
+        key_len::UInt,
         value_ptr::Ptr{UInt8},
-        value_len::UInt64,
+        value_len::UInt,
     )
         key = unsafe_wrap(Array, key_ptr, key_len)
         value = unsafe_wrap(Array, value_ptr, value_len)
         return func(userdata, key, value)
     end
 
-    func_c = @cfunction($func_inner, Int32, (Any, Ptr{UInt8}, UInt64, Ptr{UInt8}, UInt64),)
+    func_c = @cfunction($func_inner, Int32, (Any, Ptr{UInt8}, UInt, Ptr{UInt8}, UInt),)
 
     return func_c
 end
@@ -504,15 +504,15 @@ function iofunc(func)
         userdata::Any,
         ctx_ptr::Ptr{ContextInternal},
         buf_ptr::Ptr{UInt8},
-        buf_len::UInt64,
+        buf_len::UInt,
     )
         ctx = Context(ctx_ptr)
         buf = unsafe_wrap(Array, buf_ptr, buf_len)
-        return UInt64(func(userdata, ctx, buf, buf_len))
+        return UInt(func(userdata, ctx, buf, buf_len))
     end
 
     func_c =
-        @cfunction($func_inner, UInt64, (Any, Ptr{ContextInternal}, Ptr{UInt8}, UInt64))
+        @cfunction($func_inner, UInt, (Any, Ptr{ContextInternal}, Ptr{UInt8}, UInt))
 
     return func_c
 end
@@ -605,10 +605,10 @@ function Base.setproperty!(request::Request, key::Symbol, value)
         ccall(
             (:hyper_request_set_method, libhyper),
             Cvoid,
-            (Ptr{RequestInternal}, Ptr{UInt8}, UInt64),
+            (Ptr{RequestInternal}, Ptr{UInt8}, UInt),
             request.request_internal,
             value_bytes,
-            UInt64(length(value_bytes)),
+            UInt(length(value_bytes)),
         )
     elseif key == :uri
         value_bytes = Vector{UInt8}(value)
@@ -616,10 +616,10 @@ function Base.setproperty!(request::Request, key::Symbol, value)
         ccall(
             (:hyper_request_set_uri, libhyper),
             Cvoid,
-            (Ptr{RequestInternal}, Ptr{UInt8}, UInt64),
+            (Ptr{RequestInternal}, Ptr{UInt8}, UInt),
             request.request_internal,
             value_bytes,
-            UInt64(length(value_bytes)),
+            UInt(length(value_bytes)),
         )
     elseif key == :body && isa(value, Body)
         value.consumed = true
@@ -647,26 +647,26 @@ function Base.setproperty!(request::Request, key::Symbol, value)
         scheme, authority, path_and_query = value
         if isnothing(scheme)
             scheme_bytes = Ptr{UInt8}()
-            scheme_len = UInt64(0)
+            scheme_len = UInt(0)
         else
             scheme_bytes = Vector{UInt8}(scheme)
-            scheme_len = UInt64(length(scheme_bytes))
+            scheme_len = UInt(length(scheme_bytes))
         end
 
         if isnothing(authority)
             authority_bytes = Ptr{UInt8}()
-            authority_len = UInt64(0)
+            authority_len = UInt(0)
         else
             authority_bytes = Vector{UInt8}(authority)
-            authority_len = UInt64(length(authority_bytes))
+            authority_len = UInt(length(authority_bytes))
         end
 
         if isnothing(path_and_query)
             path_and_query_bytes = Ptr{UInt8}()
-            path_and_query_len = UInt64(0)
+            path_and_query_len = UInt(0)
         else
             path_and_query_bytes = Vector{UInt8}(path_and_query)
-            path_and_query_len = UInt64(length(path_and_query_bytes))
+            path_and_query_len = UInt(length(path_and_query_bytes))
         end
 
         return Code(
@@ -676,11 +676,11 @@ function Base.setproperty!(request::Request, key::Symbol, value)
                 (
                     Ptr{RequestInternal},
                     Ptr{UInt8},
-                    UInt64,
+                    UInt,
                     Ptr{UInt8},
-                    UInt64,
+                    UInt,
                     Ptr{UInt8},
-                    UInt64,
+                    UInt,
                 ),
                 request.request_internal,
                 scheme_bytes,
@@ -747,7 +747,7 @@ function Base.getproperty(response::Response, key::Symbol)
     elseif key == :reason
         bytes_len = ccall(
             (:hyper_response_reason_phrase_len, libhyper),
-            UInt64,
+            UInt,
             (Ptr{ResponseInternal},),
             response.response_internal,
         )
@@ -774,7 +774,7 @@ function Base.getproperty(task::HyperTask, key::Symbol)
         return TaskReturnType(
             ccall(
                 (:hyper_task_type, libhyper),
-                UInt64,
+                UInt,
                 (Ptr{TaskInternal},),
                 task.task_internal,
             ),

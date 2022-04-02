@@ -1,13 +1,13 @@
 mutable struct ConnData
     io::IO
-    task::Union{Task, Nothing}
+    task::Union{Task,Nothing}
     read_waker::Union{Waker,Nothing}
     write_waker::Union{Waker,Nothing}
 end
 
 @enum ExampleType EXAMPLE_NOT_SET EXAMPLE_HANDSHAKE EXAMPLE_SEND EXAMPLE_RESP_BODY
 
-function read_cb!(conn, ctx::Context, buf::AbstractVector{UInt8}, buf_len::UInt64)
+function read_cb!(conn, ctx::Context, buf::AbstractVector{UInt8}, buf_len::UInt)
     try
         avail = bytesavailable(conn.io)
         if avail > 0
@@ -21,7 +21,7 @@ function read_cb!(conn, ctx::Context, buf::AbstractVector{UInt8}, buf_len::UInt6
             if !isnothing(conn.read_waker)
                 Hyper.free!(conn.read_waker)
             end
-        
+
             conn.read_waker = Waker(ctx)
             return HYPER_IO_PENDING
         end
