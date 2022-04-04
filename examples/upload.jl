@@ -73,12 +73,12 @@ function main()
 
             task_type = task.userdata
             if task_type == EXAMPLE_HANDSHAKE
-                if task.type == Hyper.TASK_ERROR
+                if task.type == HYPER_TASK_ERROR
                     @error task.value
                     return
                 end
 
-                @assert task.type == Hyper.TASK_CLIENTCONN
+                @assert task.type == HYPER_TASK_CLIENTCONN
 
                 println("preparing http request ...")
                 client = task.value
@@ -109,12 +109,12 @@ function main()
 
                 break
             elseif task_type == EXAMPLE_SEND
-                if task.type == Hyper.TASK_ERROR
+                if task.type == HYPER_TASK_ERROR
                     @error task.value
                     return
                 end
 
-                @assert task.type == Hyper.TASK_RESPONSE
+                @assert task.type == HYPER_TASK_RESPONSE
 
                 resp = task.value
                 Hyper.free!(task)
@@ -134,10 +134,10 @@ function main()
 
                 break
             elseif task_type == EXAMPLE_RESP_BODY
-                if task.type == Hyper.TASK_ERROR
+                if task.type == HYPER_TASK_ERROR
                     @error task.value
                     return
-                elseif task.type == Hyper.TASK_BUF
+                elseif task.type == HYPER_TASK_BUF
                     chunk = task.value
                     println(chunk)
                     Hyper.free!(chunk)
@@ -149,7 +149,7 @@ function main()
 
                     break
                 else
-                    @assert task.type == Hyper.TASK_EMPTY
+                    @assert task.type == HYPER_TASK_EMPTY
                     println(" -- Done! -- ")
 
                     Hyper.free!(task)
